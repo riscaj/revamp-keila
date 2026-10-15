@@ -1,0 +1,5 @@
+REASON_PLACEHOLDER = "Pilih alasan restrukturisasi"
+TERM_PLACEHOLDER = "Pilih jangka waktu"
+PROCESS_BUTTON = "Proses Pengajuan"
+CONFIRM_BUTTON = "Ya, Proses Pengajuan"
+FINISH_BUTTON = "Selesai"
