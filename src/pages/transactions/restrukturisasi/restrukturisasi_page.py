@@ -4,6 +4,7 @@ from selenium.common.exceptions import (
     NoSuchWindowException,
     StaleElementReferenceException,
 )
+from selenium.webdriver.support.ui import WebDriverWait
 
 from src.pages.transactions.restrukturisasi import restrukturisasi_locators as locators
 
@@ -128,6 +129,53 @@ class RestrukturisasiPage:
             locators.RESTRUCTURING_LOCATOR
         )
         self.click_centered(restructuring_item)
+
+    def open_survey_menu(self, pumk_section):
+        self.driver.execute_script(
+            "window.scrollTo(0, document.documentElement.scrollHeight);"
+        )
+        time.sleep(0.5)
+        self.driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+            pumk_section,
+        )
+        self.click_centered(self.find_pumk_see_all())
+        survey_item = WebDriverWait(self.driver, 30, poll_frequency=0.5).until(
+            lambda driver: driver.execute_script(
+                """
+                const visible = element =>
+                    element.getClientRects().length > 0 &&
+                    getComputedStyle(element).visibility !== 'hidden' &&
+                    getComputedStyle(element).display !== 'none';
+                const normalize = value => value.trim().replace(/\\s+/g, ' ');
+                const matches = [...document.querySelectorAll('body *')]
+                    .filter(element => {
+                        const text = normalize(
+                            element.innerText || element.textContent || ''
+                        ).toLocaleLowerCase();
+                        return visible(element) &&
+                            text === 'survey restrukturisasi pumk';
+                    });
+                const leaves = matches.filter(element =>
+                    ![...element.children].some(child => {
+                        const text = normalize(
+                            child.innerText || child.textContent || ''
+                        ).toLocaleLowerCase();
+                        return text === 'survey restrukturisasi pumk';
+                    })
+                );
+                const candidates = leaves.length ? leaves : matches;
+                candidates.sort((left, right) => {
+                    const leftRect = left.getBoundingClientRect();
+                    const rightRect = right.getBoundingClientRect();
+                    return leftRect.width * leftRect.height -
+                        rightRect.width * rightRect.height;
+                });
+                return candidates[0] || null;
+                """
+            )
+        )
+        self.click_centered(survey_item)
 
     def search_credit_number(self):
         search_button = self.find_visible_and_enabled(locators.SEARCH_CREDIT_LOCATOR)
