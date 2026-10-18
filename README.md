@@ -1,28 +1,41 @@
 # Revamp Keila
 
-The repository contains separate automation projects:
+Repository ini berisi dua proyek otomasi yang terpisah:
 
-- `Reklasifikasi/` runs the Reklasifikasi workflow.
-- `Restrukturisasi/` runs the Restrukturisasi workflow.
+- `Reklasifikasi/` untuk alur Reklasifikasi.
+- `Restrukturisasi/` untuk alur Restrukturisasi.
 
-## Local configuration
+## Persiapan
 
-For Reklasifikasi, copy `Reklasifikasi/credentials.example.py` to
-`Reklasifikasi/credentials.py` and fill in credentials locally. Do not commit
-`credentials.py`.
+Siapkan kredensial lokal untuk proyek yang akan dijalankan:
 
-For Restrukturisasi, copy `Restrukturisasi/credentials.example.py` to
-`Restrukturisasi/credentials.py` and fill in credentials locally. Do not commit
-`credentials.py`.
+```bash
+cp Reklasifikasi/credentials.example.py Reklasifikasi/credentials.py
+cp Restrukturisasi/credentials.example.py Restrukturisasi/credentials.py
+```
 
-Set the test credit numbers in the environment before running the workflows:
+Isi username dan password sesuai role yang dibutuhkan serta cabang yang
+menangani nomor kredit. Jangan commit file `credentials.py`.
 
-- `REKLASIFIKASI_CREDIT_NUMBER` for Reklasifikasi.
-- `RESTRUKTURISASI_CREDIT_NUMBER` for Restrukturisasi.
+Gunakan nomor kredit pengujian yang sesuai dengan jenis kredit dan
+kolektibilitas yang dibutuhkan oleh skenario. Atur nomor kredit melalui
+environment variable sebelum menjalankan proyek terkait:
 
-## Running workflows
+```bash
+export REKLASIFIKASI_CREDIT_NUMBER="<nomor-kredit-pengujian>"
+export RESTRUKTURISASI_CREDIT_NUMBER="<nomor-kredit-pengujian>"
+```
 
-Run from the corresponding project directory:
+## Menjalankan workflow
+
+Pasang dependensi proyek terlebih dahulu jika belum tersedia:
+
+```bash
+python3 -m pip install -r Reklasifikasi/requirements.txt
+python3 -m pip install -r Restrukturisasi/requirements.txt
+```
+
+Jalankan dari root repository dengan memilih proyek yang diinginkan:
 
 ```bash
 cd Reklasifikasi
@@ -34,7 +47,5 @@ cd Restrukturisasi
 python3 Restrukturisasi.py --format plain --no-capture
 ```
 
-Each runner writes its PDF report to that project's `Reports/` directory.
-
-Nomor Kredit perlu diubah dan dipastikan jenis kredit dan kolektibilitasnya
-Username dan password perlu disesuaikan dengan cabang pada tiap nomor kredit
+Runner menjalankan workflow lengkap bawaan dan menyimpan report PDF di folder
+`Reports/` pada proyek masing-masing.
