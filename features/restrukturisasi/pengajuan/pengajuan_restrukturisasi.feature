@@ -5,7 +5,7 @@ Feature: Pengajuan restrukturisasi PUMK
     Given halaman sign-in aplikasi dibuka
     When saya masuk menggunakan kredensial yang dikonfigurasi
     And saya membuka menu Pengajuan Restrukturisasi PUMK
-    And saya mencari nomor kredit "13114260905465"
+    And saya mencari nomor kredit yang dikonfigurasi
     And saya memilih alasan restrukturisasi "Dampak kondisi ekonomi"
     And saya memilih jangka waktu "12 Bulan"
     Then saya mengonfirmasi dan menyelesaikan pengajuan

@@ -7,7 +7,7 @@ from src.pages.transactions.restrukturisasi import rekomendasi_locators as locat
 
 
 REVIEW_STATEMENT = "Saya telah memeriksa data ini."
-DECISION_NOTE = "Rekomendasi telah disetujui oleh MBI"
+DECISION_NOTE = "Survey telah disetujui pada proses approval"
 REVIEW_SECTIONS = (
     "Data Mitra Binaan",
     "Data Penjamin",
