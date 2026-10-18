@@ -42,38 +42,50 @@ class SurveyPage:
 
     def complete_first_survey(self):
         self._click_next()
-        self._save_and_continue()
-        self._save_and_continue()
-        self._save_and_continue()
+        self._save_and_continue("Data Mitra Binaan")
+        self._save_and_continue("Data Penjamin")
+        self._save_and_continue("Data Usaha")
         self._click_next()
-        self._save_and_continue()
-        self._save_and_continue()
-        self._save_current_page()
+        self._save_and_continue("Data Keuangan")
+        time.sleep(3)
+        self._save_and_continue("Fasilitas Kredit")
+        self._save_current_page("Assessment 5C")
+        time.sleep(3)
         self._click_button("Selesaikan Survey")
         self._fill_survey_note_and_save()
         self._click_button("Kembali ke Daftar")
-        self._wait_for_button("Proses Survey")
+        self.wait.until(
+            lambda driver: not self._find_visible_button_in(
+                driver, "Kembali ke Daftar"
+            ),
+            "Halaman daftar survey tidak terbuka setelah kembali.",
+        )
+        self.wait.until(
+            self._has_visible_survey_rows,
+            "Daftar survey tidak menampilkan record setelah kembali.",
+        )
 
-    def _save_and_continue(self):
-        self._save_current_page()
+    def _save_and_continue(self, section):
+        self._save_current_page(section)
         self._click_next()
 
     def _click_next(self):
         self._click_button("Selanjutnya")
         time.sleep(5)
 
-    def _save_current_page(self):
+    def _save_current_page(self, section):
         self._click_button("Simpan")
         self._click_button("Ya, Simpan Data")
         self.wait.until(
             lambda driver: not self._find_visible_button_in(
                 driver, "Ya, Simpan Data"
             ),
-            "Modal Ya, Simpan Data tidak tertutup setelah konfirmasi.",
+            f"Modal Ya, Simpan Data tidak tertutup setelah menyimpan {section}.",
         )
         self.wait.until(
             self._save_success_is_visible,
-            "Notifikasi 'Data berhasil disimpan' tidak muncul setelah menyimpan section.",
+            "Notifikasi 'Data berhasil disimpan' tidak muncul setelah "
+            f"menyimpan {section}.",
         )
 
     @staticmethod
@@ -96,9 +108,14 @@ class SurveyPage:
         )
 
     def _fill_survey_note_and_save(self):
+        error_message = (
+            "Field Catatan dan tombol Simpan pada konfirmasi survey tidak ditemukan."
+        )
+        self.wait.until(self._find_survey_note_and_save_button, error_message)
+        time.sleep(3)
         field_and_button = self.wait.until(
             self._find_survey_note_and_save_button,
-            "Field Catatan dan tombol Simpan pada konfirmasi survey tidak ditemukan.",
+            error_message,
         )
         note_field, save_button = field_and_button
         note_field.clear()
@@ -142,6 +159,13 @@ class SurveyPage:
         if button and button.is_enabled():
             return button
         return False
+
+    @staticmethod
+    def _has_visible_survey_rows(driver):
+        return any(
+            row.is_displayed()
+            for row in driver.find_elements(*locators.SURVEY_ROWS)
+        )
 
     def _find_survey_note_and_save_button(self, driver):
         return driver.execute_script(

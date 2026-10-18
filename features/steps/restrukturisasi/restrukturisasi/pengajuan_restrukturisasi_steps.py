@@ -1,3 +1,5 @@
+import time
+
 from behave import given, when
 from selenium.common.exceptions import StaleElementReferenceException
 
@@ -32,4 +34,5 @@ def search_credit_number(context, credit_number):
             credit_number_input = page.find_visible(page.credit_number_locator)
 
     page.search_credit_number()
+    time.sleep(5)
     print("Nomor kredit dicari; memilih alasan restrukturisasi.")

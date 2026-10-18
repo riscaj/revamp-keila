@@ -1,1 +1,7 @@
 credentials.py
+__pycache__/
+*.py[cod]
+.DS_Store
+Reports/*.pdf
+.venv/
+.venv-*/

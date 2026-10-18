@@ -1,5 +1,3 @@
-import time
-
 from behave import then, when
 
 
@@ -17,5 +15,10 @@ def choose_term(context, term):
 @then("saya mengonfirmasi dan menyelesaikan pengajuan")
 def confirm_and_finish_application(context):
     context.pengajuan_restrukturisasi_page.confirm_and_finish()
-    print("Kembali ke Daftar sudah diklik. Browser ditutup dalam 5 detik.")
-    time.sleep(5)
+
+
+@then("dashboard beranda tampil kembali")
+def wait_for_home_dashboard(context):
+    context.pumk_section = (
+        context.restrukturisasi_page.return_to_home_dashboard()
+    )

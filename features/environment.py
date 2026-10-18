@@ -6,6 +6,9 @@ from src.pages.transactions.restrukturisasi.pengajuan_restrukturisasi_page impor
 from src.pages.transactions.restrukturisasi.restrukturisasi_page import (
     RestrukturisasiPage,
 )
+from src.pages.transactions.restrukturisasi.persetujuan_page import PersetujuanPage
+from src.pages.transactions.restrukturisasi.realisasi_page import RealisasiPage
+from src.pages.transactions.restrukturisasi.rekomendasi_page import RekomendasiPage
 from src.pages.transactions.restrukturisasi.survey_page import SurveyPage
 
 
@@ -13,23 +16,44 @@ def before_scenario(context, scenario):
     if context.config.dry_run:
         return
 
-    from credentials import PASSWORD_AO, USERNAME_AO
+    if "mbi" in scenario.effective_tags:
+        from credentials import PASSWORD_MBI, USERNAME_MBI
 
-    if not USERNAME_AO or not PASSWORD_AO:
+        username = USERNAME_MBI
+        password = PASSWORD_MBI
+        credential_name = "MBI"
+    elif "ksr" in scenario.effective_tags:
+        from credentials import PASSWORD_KSR, USERNAME_KSR
+
+        username = USERNAME_KSR
+        password = PASSWORD_KSR
+        credential_name = "KSR"
+    else:
+        from credentials import PASSWORD_AO, USERNAME_AO
+
+        username = USERNAME_AO
+        password = PASSWORD_AO
+        credential_name = "AO"
+
+    if not username or not password:
         raise RuntimeError(
-            "USERNAME_AO atau PASSWORD_AO belum diisi di credentials.py."
+            f"USERNAME_{credential_name} atau PASSWORD_{credential_name} "
+            "belum diisi di credentials.py."
         )
 
     options = webdriver.ChromeOptions()
     options.page_load_strategy = "none"
     context.driver = webdriver.Chrome(options=options)
-    context.username = USERNAME_AO
-    context.password = PASSWORD_AO
+    context.username = username
+    context.password = password
     context.restrukturisasi_page = RestrukturisasiPage(context.driver)
     context.pengajuan_restrukturisasi_page = PengajuanRestrukturisasiPage(
         context.driver
     )
     context.survey_page = SurveyPage(context.driver)
+    context.rekomendasi_page = RekomendasiPage(context.driver)
+    context.persetujuan_page = PersetujuanPage(context.driver)
+    context.realisasi_page = RealisasiPage(context.driver)
 
 
 def after_scenario(context, scenario):
