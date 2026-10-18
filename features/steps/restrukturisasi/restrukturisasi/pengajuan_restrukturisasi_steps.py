@@ -1,3 +1,4 @@
+import os
 import time
 
 from behave import given, when
@@ -23,6 +24,20 @@ def open_restructuring_menu(context):
 
 @when('saya mencari nomor kredit "{credit_number}"')
 def search_credit_number(context, credit_number):
+    _enter_credit_number(context, credit_number)
+
+
+@when("saya mencari nomor kredit yang dikonfigurasi")
+def search_configured_credit_number(context):
+    credit_number = os.environ.get("RESTRUKTURISASI_CREDIT_NUMBER")
+    if not credit_number:
+        raise RuntimeError(
+            "RESTRUKTURISASI_CREDIT_NUMBER belum diatur pada environment."
+        )
+    _enter_credit_number(context, credit_number)
+
+
+def _enter_credit_number(context, credit_number):
     page = context.restrukturisasi_page
     credit_number_input = page.find_visible(page.credit_number_locator)
     while True:
