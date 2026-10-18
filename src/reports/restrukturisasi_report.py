@@ -1,5 +1,6 @@
 from html import escape
 from pathlib import Path
+import re
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT
@@ -29,7 +30,12 @@ MUTED = colors.HexColor("#667A74")
 
 
 def _paragraph(text, style):
-    return Paragraph(escape(str(text)).replace("\n", "<br/>"), style)
+    safe_text = re.sub(
+        r"\b\d{10,}\b",
+        lambda match: f"{'*' * (len(match.group()) - 4)}{match.group()[-4:]}",
+        str(text),
+    )
+    return Paragraph(escape(safe_text).replace("\n", "<br/>"), style)
 
 
 def _scenario_data(results):
