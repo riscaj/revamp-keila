@@ -70,3 +70,5 @@ persetujuan setelah pelaporan berhasil.
 Runner menjalankan workflow lengkap bawaan dan menyimpan report PDF di folder
 `Reports/` pada proyek masing-masing. Workflow Monitoring membuka data pertama
 untuk `Kredit Awal`, `Rescheduling`, `Reconditioning`, dan `Kredit Bermasalah`.
+Proyek Pelaporan Kas Harian juga menyimpan report PDF setiap selesai dijalankan,
+termasuk saat workflow gagal, di `Pelaporan Kas Harian/Reports/`.
