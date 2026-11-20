@@ -20,11 +20,11 @@ def open_daily_cash_and_bank_report_menu(context):
     context.pelaporan_kas_harian_page.open_report_menu()
 
 
-@then(
-    "saya memproses data yang belum dilaporkan atau menambah laporan baru"
-)
+@then("saya mengirim laporan kas harian")
 def handle_daily_cash_and_bank_report(context):
     page = context.pelaporan_kas_harian_page
     context.report_action = page.process_pending_or_add_report()
-    if context.report_action in {"process", "add_report"}:
+    if context.report_action == "process_repair":
+        page.complete_repair_bank_balance_report()
+    elif context.report_action in {"process", "add_report"}:
         page.complete_bank_balance_report()

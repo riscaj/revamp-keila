@@ -2,12 +2,52 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
+from features.steps.pelaporan_kas_harian.persetujuan.persetujuan_kas_harian_steps import (
+    open_menu_and_approve_pending_daily_cash_reports,
+)
 from src.pages.transactions.pelaporan_kas_harian.persetujuan_kas_harian_page import (
     PersetujuanKasHarianPage,
 )
 
 
 class PersetujuanKasHarianPageTests(unittest.TestCase):
+    def test_approval_workflow_finishes_in_menu_step(self):
+        page = Mock()
+        page.approve_one_pending_report.return_value = 1
+        context = SimpleNamespace(persetujuan_kas_harian_page=page)
+
+        open_menu_and_approve_pending_daily_cash_reports(context)
+
+        page.open_approval_menu.assert_called_once_with()
+        page.approve_one_pending_report.assert_called_once_with()
+        self.assertEqual(context.approved_report_count, 1)
+
+    def test_approves_only_first_pending_report_and_finishes_after_acknowledgement(self):
+        page = object.__new__(PersetujuanKasHarianPage)
+        pending_row = object()
+        process_button = object()
+        page._first_pending_report_across_pages = Mock(return_value=pending_row)
+        page._find_row_action = Mock(return_value=process_button)
+        page._click_centered = Mock()
+        page._complete_approval_form = Mock()
+
+        result = page.approve_one_pending_report()
+
+        self.assertEqual(result, 1)
+        page._first_pending_report_across_pages.assert_called_once_with()
+        page._click_centered.assert_called_once_with(process_button)
+        page._complete_approval_form.assert_called_once_with()
+
+    def test_returns_zero_when_no_pending_report_exists(self):
+        page = object.__new__(PersetujuanKasHarianPage)
+        page._first_pending_report_across_pages = Mock(return_value=None)
+        page._click_centered = Mock()
+
+        result = page.approve_one_pending_report()
+
+        self.assertEqual(result, 0)
+        page._click_centered.assert_not_called()
+
     def test_completes_both_checklists_and_submits_approval_confirmation(self):
         page = object.__new__(PersetujuanKasHarianPage)
         page.wait = Mock()
@@ -36,7 +76,8 @@ class PersetujuanKasHarianPageTests(unittest.TestCase):
             True,
             note_input,
             True,
-            understood_button,
+            ("element", understood_button),
+            True,
         ]
         page._click_centered = Mock()
         events = []
@@ -49,7 +90,7 @@ class PersetujuanKasHarianPageTests(unittest.TestCase):
 
         with patch(
             "src.pages.transactions.pelaporan_kas_harian."
-            "persetujuan_kas_harian_page.sleep",
+            "pelaporan_kas_harian_page.sleep",
             side_effect=lambda seconds: events.append(("sleep", seconds)),
         ) as sleep_mock:
             page._complete_approval_form()
@@ -75,36 +116,25 @@ class PersetujuanKasHarianPageTests(unittest.TestCase):
             page._find_exact_visible_text.call_args_list,
             [call("Proses"), call("Ya, Setujui")],
         )
-        self.assertEqual(page.wait.until.call_count, 11)
+        self.assertEqual(page.wait.until.call_count, 12)
         self.assertEqual(sleep_mock.call_args_list, [call(5)])
         self.assertEqual(
             events[-2:],
             [("click", understood_button), ("sleep", 5)],
         )
 
-    def test_counts_pending_reports_across_all_pages(self):
+    def test_stops_searching_after_first_pending_report_is_found(self):
         page = object.__new__(PersetujuanKasHarianPage)
         page._approval_page_numbers = Mock(return_value=[1, 2])
         page._go_to_approval_page = Mock()
+        pending_row = SimpleNamespace(text="Menunggu Persetujuan")
         page._visible_report_rows = Mock(
-            side_effect=[
-                [
-                    SimpleNamespace(
-                        text="Belum Dilaporkan - Menunggu Persetujuan"
-                    )
-                ],
-                [
-                    SimpleNamespace(text="Disetujui"),
-                    SimpleNamespace(text="Menunggu Persetujuan"),
-                ],
-            ]
+            return_value=[SimpleNamespace(text="Disetujui"), pending_row]
         )
 
-        self.assertEqual(page._count_pending_reports_across_pages(), 2)
-        self.assertEqual(
-            page._go_to_approval_page.call_args_list,
-            [call(1), call(2)],
-        )
+        self.assertIs(page._first_pending_report_across_pages(), pending_row)
+        page._go_to_approval_page.assert_called_once_with(1)
+        page._visible_report_rows.assert_called_once_with()
 
 
 if __name__ == "__main__":

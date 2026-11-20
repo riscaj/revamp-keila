@@ -1,4 +1,4 @@
-from behave import given, then, when
+from behave import given, when
 
 
 @given("halaman sign-in persetujuan dibuka")
@@ -14,13 +14,8 @@ def sign_in_as_branch_manager(context):
     page.wait_for_dashboard()
 
 
-@when("saya membuka menu persetujuan laporan kas harian")
-def open_daily_cash_report_approval_menu(context):
-    context.persetujuan_kas_harian_page.open_approval_menu()
-
-
-@then("saya menyetujui semua laporan yang menunggu persetujuan")
-def approve_all_pending_daily_cash_reports(context):
-    context.approved_report_count = (
-        context.persetujuan_kas_harian_page.approve_all_pending_reports()
-    )
+@when("saya membuka menu dan memproses persetujuan laporan kas harian")
+def open_menu_and_approve_pending_daily_cash_reports(context):
+    page = context.persetujuan_kas_harian_page
+    page.open_approval_menu()
+    context.approved_report_count = page.approve_one_pending_report()

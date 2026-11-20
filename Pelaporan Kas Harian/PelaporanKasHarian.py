@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from src.reports.kas_harian_report import create_pdf_report
+from src.reports.pelaporan_kas_harian_report import create_pdf_report
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -26,16 +26,6 @@ def _has_feature_path(arguments):
     )
 
 
-def _has_tag_selector(arguments):
-    return any(
-        argument == "--tags"
-        or argument.startswith("--tags=")
-        or argument == "--name"
-        or argument.startswith("--name=")
-        for argument in arguments
-    )
-
-
 def main(arguments):
     run_started = datetime.now().astimezone()
     started_at = time.monotonic()
@@ -43,7 +33,9 @@ def main(arguments):
     REPORT_DIRECTORY.mkdir(parents=True, exist_ok=True)
     report_path = REPORT_DIRECTORY / f"pelaporan-kas-harian-{run_id}.pdf"
 
-    with tempfile.TemporaryDirectory(prefix="kas-harian-report-") as temp_dir:
+    with tempfile.TemporaryDirectory(
+        prefix="pelaporan-kas-harian-report-"
+    ) as temp_dir:
         json_path = Path(temp_dir) / "behave-results.json"
         behave_arguments = [
             sys.executable,
@@ -51,11 +43,10 @@ def main(arguments):
             "behave",
             "--format=json",
             f"--outfile={json_path}",
+            "--format=pretty",
         ]
         if not _has_feature_path(arguments):
             behave_arguments.append(DEFAULT_FEATURE)
-            if not _has_tag_selector(arguments):
-                behave_arguments.append("--tags=@pelaporan_kas_harian")
         behave_arguments.extend(arguments)
 
         result = subprocess.run(

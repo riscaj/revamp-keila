@@ -1,7 +1,12 @@
 from pathlib import Path
 from time import sleep
 
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import (
+    NoAlertPresentException,
+    NoSuchWindowException,
+    StaleElementReferenceException,
+    TimeoutException,
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
@@ -15,6 +20,7 @@ from src.pages.transactions.pelaporan_kas_harian import (
 class PelaporanKasHarianPage:
     login_url = locators.LOGIN_URL
     ACTION_PAUSE_SECONDS = 1
+    SALDO_CMS_NOMINAL = "4.950.001"
     CMS_BANK_UPLOAD_DIRECTORY = (
         Path(__file__).resolve().parents[4] / "Upload_CMS_Bank"
     )
@@ -140,15 +146,20 @@ class PelaporanKasHarianPage:
                     for row, status in zip(rows, row_statuses)
                     if "belum dilaporkan" in status
                 ]
+                repair_rows = [
+                    row
+                    for row, status in zip(rows, row_statuses)
+                    if "perlu perbaikan" in status
+                ]
                 all_approved = all(
                     "disetujui" in status for status in row_statuses
                 )
                 if pending_rows:
-                    process_button = self._find_row_action(
-                        pending_rows[0],
-                        "proses",
-                    )
+                    row_to_process = pending_rows[0]
                     action = "process"
+                elif repair_rows:
+                    row_to_process = repair_rows[0]
+                    action = "process_repair"
                 elif all_approved:
                     action = "add_report"
                 else:
@@ -156,11 +167,12 @@ class PelaporanKasHarianPage:
                         "disetujui" in status for status in row_statuses
                     )
                     raise AssertionError(
-                        "Tidak ditemukan data berstatus Belum Dilaporkan dan "
-                        "seluruh data belum berstatus Disetujui. "
+                        "Tidak ditemukan data berstatus Belum Dilaporkan, "
+                        "Perlu Perbaikan, atau seluruh data Disetujui. "
                         f"Status terbaca: {len(pending_rows)} belum dilaporkan, "
+                        f"{len(repair_rows)} perlu perbaikan, "
                         f"{approved_count} disetujui, "
-                        f"{len(rows) - len(pending_rows) - approved_count} "
+                        f"{len(rows) - len(pending_rows) - len(repair_rows) - approved_count} "
                         "status lain."
                     )
                 break
@@ -172,17 +184,94 @@ class PelaporanKasHarianPage:
                     ) from error
                 sleep(0.5)
 
-        if action == "process":
-            self._click_centered(process_button)
-            self._complete_cash_denominations()
-            return "process"
+        if action in {"process", "process_repair"}:
+            self._click_and_follow_window_change(
+                self._find_row_action(row_to_process, "proses"),
+                "Proses",
+            )
+            if action == "process_repair":
+                self._click_centered(
+                    self._find_exact_visible_text("Selanjutnya")
+                )
+                self._calculate_cash_denominations()
+                return action
 
-        self._click_centered(self._find_exact_visible_text("Tambah Laporan"))
+            self._complete_cash_denominations()
+            return action
+
+        self._click_and_follow_window_change(
+            self._find_exact_visible_text("Tambah Laporan"),
+            "Tambah Laporan",
+        )
         self._complete_cash_denominations()
         return "add_report"
 
+    def _click_and_follow_window_change(self, element, action_name):
+        try:
+            previous_handles = set(self.driver.window_handles)
+        except NoSuchWindowException as error:
+            raise NoSuchWindowException(
+                f"Jendela Chrome sudah tertutup sebelum tombol "
+                f"'{action_name}' diklik."
+            ) from error
+        if not previous_handles:
+            raise NoSuchWindowException(
+                f"Tidak ada jendela Chrome yang terbuka saat tombol "
+                f"'{action_name}' akan diklik."
+            )
+
+        self._click_centered(element)
+
+        def switch_to_available_window(driver):
+            try:
+                handles = driver.window_handles
+            except NoSuchWindowException:
+                return False
+            if not handles:
+                return False
+
+            new_handles = [
+                handle for handle in handles if handle not in previous_handles
+            ]
+            if new_handles:
+                try:
+                    driver.switch_to.window(new_handles[-1])
+                except NoSuchWindowException:
+                    return False
+                return True
+
+            try:
+                current_handle = driver.current_window_handle
+            except NoSuchWindowException:
+                current_handle = None
+            if current_handle not in handles:
+                try:
+                    driver.switch_to.window(handles[-1])
+                except NoSuchWindowException:
+                    return False
+            return True
+
+        try:
+            WebDriverWait(
+                self.driver,
+                5,
+                poll_frequency=0.25,
+            ).until(
+                switch_to_available_window,
+                f"Jendela Chrome tidak tersedia setelah tombol "
+                f"'{action_name}' diklik.",
+            )
+        except TimeoutException as error:
+            raise NoSuchWindowException(
+                f"Jendela Chrome tertutup setelah tombol '{action_name}' "
+                "diklik; tidak ada jendela yang bisa dilanjutkan."
+            ) from error
+
     def _complete_cash_denominations(self):
         self._fill_first_row_sheet_count()
+        self._calculate_cash_denominations()
+
+    def _calculate_cash_denominations(self):
         self._scroll_to_page_bottom()
         self._click_centered(self._find_exact_visible_text("Hitung"))
         self._click_centered(self._find_exact_visible_text("Selanjutnya"))
@@ -215,17 +304,25 @@ class PelaporanKasHarianPage:
         saldo_input.click()
         sleep(self.ACTION_PAUSE_SECONDS)
         saldo_input.clear()
-        saldo_input.send_keys("0")
+        saldo_input.send_keys(self.SALDO_CMS_NOMINAL)
         saldo_input.send_keys(Keys.TAB)
         sleep(self.ACTION_PAUSE_SECONDS)
         self.wait.until(
-            lambda _driver: saldo_input.get_property("value").strip() == "0",
-            "Field Saldo CMS tidak terisi 0 setelah difokuskan, diketik, dan "
+            lambda _driver: saldo_input.get_property("value").strip()
+            == self.SALDO_CMS_NOMINAL,
+            "Field Saldo CMS tidak terisi "
+            f"{self.SALDO_CMS_NOMINAL} setelah difokuskan, diketik, dan "
             "disimpan dengan berpindah fokus.",
         )
 
         self._scroll_to_page_bottom()
         self._click_centered(self._find_exact_visible_text("Hitung"))
+        self._submit_bank_report()
+
+    def complete_repair_bank_balance_report(self):
+        self._submit_bank_report()
+
+    def _submit_bank_report(self):
         self._click_centered(self._find_exact_visible_text("Kirim Laporan"))
         confirmation_button = self.wait.until(
             EC.element_to_be_clickable(
@@ -238,14 +335,108 @@ class PelaporanKasHarianPage:
             "mengeklik Kirim Laporan.",
         )
         self._click_centered(confirmation_button)
-        understood_button = self.wait.until(
-            EC.element_to_be_clickable(
-                (By.XPATH, '//button[normalize-space(.)="Mengerti"]')
-            ),
-            "Tombol 'Mengerti' tidak muncul setelah konfirmasi laporan.",
+        self._acknowledge_understood_popup("setelah konfirmasi laporan")
+
+    def _acknowledge_understood_popup(self, context):
+        def find_popup(driver):
+            try:
+                return "alert", driver.switch_to.alert
+            except NoAlertPresentException:
+                pass
+
+            element = driver.execute_script(
+                """
+                const expected = arguments[0];
+                const normalize = value => (value || '').trim().replace(/\\s+/g, ' ');
+                const visible = element =>
+                    element.getClientRects().length > 0 &&
+                    getComputedStyle(element).visibility !== 'hidden' &&
+                    getComputedStyle(element).display !== 'none';
+                const interactive = [...document.querySelectorAll(
+                    'button, [role="button"], input[type="button"], '
+                    + 'input[type="submit"], a'
+                )].find(element =>
+                    visible(element) &&
+                    normalize(
+                        element.innerText || element.value || element.textContent
+                    ) === expected &&
+                    !element.disabled
+                );
+                if (interactive) return interactive;
+
+                const matches = [...document.querySelectorAll('span, div')]
+                    .filter(element =>
+                        visible(element) &&
+                        normalize(element.innerText || element.textContent) === expected
+                    );
+                for (const match of matches) {
+                    let candidate = match;
+                    while (candidate && candidate !== document.body) {
+                        if (
+                            candidate.matches(
+                                'button, [role="button"], input[type="button"], '
+                                + 'input[type="submit"], a'
+                            ) &&
+                            !candidate.disabled
+                        ) {
+                            return candidate;
+                        }
+                        candidate = candidate.parentElement;
+                    }
+                    return match;
+                }
+                return false;
+                """,
+                "Mengerti",
+            )
+            if element and element.is_displayed() and element.is_enabled():
+                return "element", element
+            return False
+
+        popup_type, popup = self.wait.until(
+            find_popup,
+            f"Tombol atau alert 'Mengerti' tidak ditemukan {context}.",
         )
-        self._click_centered(understood_button)
+        if popup_type == "alert":
+            popup.accept()
+        else:
+            self._click_centered(popup)
+
+        self.wait.until(
+            lambda driver: self._understood_popup_is_closed(driver),
+            f"Popup Mengerti belum tertutup {context}.",
+        )
         sleep(5)
+
+    @staticmethod
+    def _understood_popup_is_closed(driver):
+        try:
+            driver.switch_to.alert
+        except NoAlertPresentException:
+            return not bool(
+                driver.execute_script(
+                    """
+                    const normalize = value =>
+                        (value || '').trim().replace(/\\s+/g, ' ');
+                    const visible = element =>
+                        element.getClientRects().length > 0 &&
+                        getComputedStyle(element).visibility !== 'hidden' &&
+                        getComputedStyle(element).display !== 'none';
+                    return [...document.querySelectorAll(
+                        'button, [role="button"], input[type="button"], '
+                        + 'input[type="submit"], a, span, div'
+                    )].some(element =>
+                        visible(element) &&
+                        normalize(
+                            element.innerText ||
+                            element.value ||
+                            element.textContent
+                        ) === 'Mengerti'
+                    );
+                    """
+                )
+            )
+        return False
 
     def _visible_report_rows(self):
         self.wait.until(
@@ -302,7 +493,7 @@ class PelaporanKasHarianPage:
             if element.is_displayed() and element.is_enabled() and text == action_text:
                 return element
         raise AssertionError(
-            "Tombol Proses tidak ditemukan pada baris yang belum dilaporkan."
+            "Tombol Proses tidak ditemukan pada baris laporan."
         )
 
     def _fill_first_row_sheet_count(self):
@@ -311,13 +502,58 @@ class PelaporanKasHarianPage:
             "Input Jumlah Lembar pada baris pertama tidak ditemukan.",
         )
         sleep(self.ACTION_PAUSE_SECONDS)
-        sheet_input.clear()
-        sheet_input.send_keys("0")
+        try:
+            sheet_input.clear()
+            sheet_input.send_keys("0")
+        except NoSuchWindowException as error:
+            self._switch_to_open_window()
+            sheet_input = self.wait.until(
+                self._first_row_sheet_count_input,
+                "Input Jumlah Lembar tidak ditemukan setelah berpindah "
+                "ke jendela browser yang aktif.",
+            )
+            try:
+                sheet_input.clear()
+                sheet_input.send_keys("0")
+            except NoSuchWindowException as retry_error:
+                raise NoSuchWindowException(
+                    "Jendela Chrome kembali tertutup saat mengisi Jumlah "
+                    "Lembar; pengisian tidak dapat dilanjutkan."
+                ) from retry_error
         sleep(self.ACTION_PAUSE_SECONDS)
         self.wait.until(
             lambda _driver: sheet_input.get_attribute("value") == "0",
             "Jumlah Lembar pada baris pertama tidak terisi 0.",
         )
+
+    def _switch_to_open_window(self):
+        def switch_to_available_window(driver):
+            try:
+                handles = driver.window_handles
+            except NoSuchWindowException:
+                return False
+            for handle in reversed(handles):
+                try:
+                    driver.switch_to.window(handle)
+                except NoSuchWindowException:
+                    continue
+                return True
+            return False
+
+        try:
+            WebDriverWait(
+                self.driver,
+                5,
+                poll_frequency=0.25,
+            ).until(
+                switch_to_available_window,
+                "Tidak ada jendela Chrome yang dapat digunakan.",
+            )
+        except TimeoutException as error:
+            raise NoSuchWindowException(
+                "Jendela Chrome tertutup saat mengisi Jumlah Lembar dan "
+                "tidak ada jendela lain yang dapat digunakan."
+            ) from error
 
     def _first_row_sheet_count_input(self, driver):
         for table in driver.find_elements(By.CSS_SELECTOR, "table"):

@@ -5,7 +5,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 REPORT_SCRIPT = PROJECT_ROOT / "PelaporanKasHarian.py"
-COMBINED_FEATURE = (
+WORKFLOW_FEATURE = (
     PROJECT_ROOT
     / "features"
     / "pelaporan_kas_harian"
@@ -14,17 +14,17 @@ COMBINED_FEATURE = (
 
 
 def main():
-    result = subprocess.run(
+    report_result = subprocess.run(
         [
             sys.executable,
             str(REPORT_SCRIPT),
-            str(COMBINED_FEATURE),
+            str(WORKFLOW_FEATURE),
             "--stop",
         ],
         cwd=PROJECT_ROOT,
         check=False,
     )
-    return result.returncode
+    return report_result.returncode
 
 
 if __name__ == "__main__":

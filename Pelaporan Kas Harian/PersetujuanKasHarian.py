@@ -1,35 +1,45 @@
-import subprocess
-import sys
-from pathlib import Path
+from selenium import webdriver
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent
-REPORT_SCRIPT = PROJECT_ROOT / "PelaporanKasHarian.py"
-COMBINED_FEATURE = (
-    PROJECT_ROOT
-    / "features"
-    / "pelaporan_kas_harian"
-    / "workflow_pelaporan_kas_harian_lengkap.feature"
+from credentials import (
+    PASSWORD_PERSETUJUAN_KAS_HARIAN,
+    USERNAME_PERSETUJUAN_KAS_HARIAN,
+)
+from src.pages.transactions.pelaporan_kas_harian.persetujuan_kas_harian_page import (
+    PersetujuanKasHarianPage,
 )
 
 
-def main(arguments=None):
-    if arguments is None:
-        arguments = sys.argv[1:]
+def main():
+    if (
+        not USERNAME_PERSETUJUAN_KAS_HARIAN
+        or not PASSWORD_PERSETUJUAN_KAS_HARIAN
+    ):
+        raise RuntimeError(
+            "USERNAME_PERSETUJUAN_KAS_HARIAN atau "
+            "PASSWORD_PERSETUJUAN_KAS_HARIAN belum diisi di "
+            "credentials.py."
+        )
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(REPORT_SCRIPT),
-            str(COMBINED_FEATURE),
-            "--tags=@persetujuan_kas_harian",
-            *arguments,
-        ],
-        cwd=PROJECT_ROOT,
-        check=False,
-    )
-    return result.returncode
+    options = webdriver.ChromeOptions()
+    options.page_load_strategy = "none"
+    driver = webdriver.Chrome(options=options)
+    try:
+        page = PersetujuanKasHarianPage(driver)
+        driver.get(page.login_url)
+        page.fill_login(
+            USERNAME_PERSETUJUAN_KAS_HARIAN,
+            PASSWORD_PERSETUJUAN_KAS_HARIAN,
+        )
+        page.wait_for_dashboard()
+        page.open_approval_menu()
+        approved_count = page.approve_one_pending_report()
+        print(
+            "Persetujuan selesai. "
+            f"Jumlah laporan yang disetujui: {approved_count}."
+        )
+    finally:
+        driver.quit()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -1,5 +1,3 @@
-from time import sleep
-
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -25,32 +23,14 @@ class PersetujuanKasHarianPage(PelaporanKasHarianPage):
         self._click_centered(menu_item)
         self._visible_report_rows()
 
-    def approve_all_pending_reports(self):
-        approved_count = 0
-        while True:
-            pending_count = self._count_pending_reports_across_pages()
-            if pending_count == 0:
-                return approved_count
+    def approve_one_pending_report(self):
+        pending_row = self._first_pending_report_across_pages()
+        if pending_row is None:
+            return 0
 
-            pending_row = self._first_pending_report_across_pages()
-            if pending_row is None:
-                raise AssertionError(
-                    "Jumlah laporan Menunggu Persetujuan berubah saat daftar "
-                    "dibaca; tidak ada laporan yang dapat diproses."
-                )
-
-            self._click_centered(self._find_row_action(pending_row, "proses"))
-            self._complete_approval_form()
-            self._wait_for_approval_list()
-
-            remaining_count = self._count_pending_reports_across_pages()
-            if remaining_count != pending_count - 1:
-                raise AssertionError(
-                    "Persetujuan tidak mengurangi jumlah laporan Menunggu "
-                    "Persetujuan tepat satu; "
-                    f"sebelum: {pending_count}, sesudah: {remaining_count}."
-                )
-            approved_count += 1
+        self._click_centered(self._find_row_action(pending_row, "proses"))
+        self._complete_approval_form()
+        return 1
 
     def _complete_approval_form(self):
         self._confirm_review_step("Pelaporan Denominasi Bank")
@@ -89,14 +69,7 @@ class PersetujuanKasHarianPage(PelaporanKasHarianPage):
         self._click_centered(self._find_exact_visible_text("Proses"))
         approval_confirmation = self._find_exact_visible_text("Ya, Setujui")
         self._click_centered(approval_confirmation)
-        understood_button = self.wait.until(
-            EC.element_to_be_clickable(
-                (By.XPATH, '//button[normalize-space(.)="Mengerti"]')
-            ),
-            "Tombol 'Mengerti' tidak muncul setelah persetujuan.",
-        )
-        self._click_centered(understood_button)
-        sleep(5)
+        self._acknowledge_understood_popup("setelah persetujuan")
 
     def _confirm_review_step(self, next_heading):
         review_checkbox = self.wait.until(
@@ -137,28 +110,6 @@ class PersetujuanKasHarianPage(PelaporanKasHarianPage):
             ),
             f"Halaman {next_heading} tidak terbuka setelah memilih Selanjutnya.",
         )
-
-    def _wait_for_approval_list(self):
-        self.wait.until(
-            lambda driver: (
-                "page=process" not in driver.current_url
-                and bool(
-                    driver.find_elements(*locators.REPORT_TABLE_LOCATOR)
-                )
-            ),
-            "Daftar persetujuan tidak terbuka kembali setelah konfirmasi.",
-        )
-        self._visible_report_rows()
-
-    def _count_pending_reports_across_pages(self):
-        total = 0
-        for page_number in self._approval_page_numbers():
-            self._go_to_approval_page(page_number)
-            total += sum(
-                self.PENDING_STATUS in self._normalized_text(row.text)
-                for row in self._visible_report_rows()
-            )
-        return total
 
     def _first_pending_report_across_pages(self):
         for page_number in self._approval_page_numbers():

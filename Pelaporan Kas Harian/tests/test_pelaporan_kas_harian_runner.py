@@ -9,61 +9,23 @@ import PelaporanKasHarian
 
 
 class PelaporanKasHarianRunnerTests(unittest.TestCase):
-    @patch("PelaporanKasHarian.subprocess.run")
-    def test_creates_pdf_and_defaults_to_reporting_scenario(self, run):
-        behave_results = [
+    def test_creates_pdf_report_even_when_behave_fails(self):
+        results = [
             {
-                "name": "Pelaporan dan Persetujuan Harian Kas Dan Bank PUMK",
-                "elements": [],
-            }
-        ]
-
-        def write_behave_results(command, **kwargs):
-            output_argument = next(
-                argument
-                for argument in command
-                if argument.startswith("--outfile=")
-            )
-            Path(output_argument.partition("=")[2]).write_text(
-                json.dumps(behave_results),
-                encoding="utf-8",
-            )
-            return SimpleNamespace(returncode=0)
-
-        run.side_effect = write_behave_results
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.object(
-                PelaporanKasHarian, "REPORT_DIRECTORY", Path(temp_dir)
-            ):
-                result = PelaporanKasHarian.main([])
-
-            self.assertEqual(result, 0)
-            command = run.call_args.args[0]
-            self.assertIn("--format=json", command)
-            self.assertIn("--tags=@pelaporan_kas_harian", command)
-            reports = list(Path(temp_dir).glob("pelaporan-kas-harian-*.pdf"))
-            self.assertEqual(len(reports), 1)
-            self.assertTrue(reports[0].read_bytes().startswith(b"%PDF-"))
-
-    @patch("PelaporanKasHarian.subprocess.run")
-    def test_creates_pdf_when_behave_reports_failure(self, run):
-        failed_results = [
-            {
-                "name": "Pelaporan dan Persetujuan Harian Kas Dan Bank PUMK",
+                "name": "Pelaporan",
                 "elements": [
                     {
                         "type": "scenario",
-                        "name": "Approval failed",
-                        "tags": ["persetujuan_kas_harian"],
+                        "name": "Mengirim laporan",
                         "status": "failed",
                         "steps": [
                             {
-                                "keyword": "Then ",
-                                "name": "approval step",
+                                "keyword": "When ",
+                                "name": "mengirim laporan",
                                 "result": {
                                     "status": "failed",
-                                    "duration": 1.0,
-                                    "error_message": "Example failure",
+                                    "duration": 0.2,
+                                    "error_message": "Pengujian gagal",
                                 },
                             }
                         ],
@@ -72,61 +34,60 @@ class PelaporanKasHarianRunnerTests(unittest.TestCase):
             }
         ]
 
-        def write_failed_results(command, **kwargs):
-            output_argument = next(
-                argument
-                for argument in command
-                if argument.startswith("--outfile=")
-            )
-            Path(output_argument.partition("=")[2]).write_text(
-                json.dumps(failed_results),
-                encoding="utf-8",
-            )
-            return SimpleNamespace(returncode=1)
-
-        run.side_effect = write_failed_results
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.object(
-                PelaporanKasHarian, "REPORT_DIRECTORY", Path(temp_dir)
-            ):
-                result = PelaporanKasHarian.main(
-                    ["custom.feature", "--tags=@persetujuan_kas_harian"]
-                )
+            report_directory = Path(temp_dir) / "Reports"
 
-            self.assertEqual(result, 1)
-            reports = list(Path(temp_dir).glob("pelaporan-kas-harian-*.pdf"))
-            self.assertEqual(len(reports), 1)
-            self.assertTrue(reports[0].read_bytes().startswith(b"%PDF-"))
-
-    @patch("PelaporanKasHarian.subprocess.run")
-    def test_respects_explicit_feature_and_tag_arguments(self, run):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            def write_behave_results(command, **kwargs):
+            def run_behave(arguments, **_kwargs):
                 output_argument = next(
                     argument
-                    for argument in command
+                    for argument in arguments
                     if argument.startswith("--outfile=")
                 )
-                Path(output_argument.partition("=")[2]).write_text(
-                    "[]",
-                    encoding="utf-8",
-                )
-                return SimpleNamespace(returncode=0)
+                output_path = Path(output_argument.split("=", 1)[1])
+                output_path.write_text(json.dumps(results), encoding="utf-8")
+                return SimpleNamespace(returncode=1)
 
-            run.side_effect = write_behave_results
-            with patch.object(
-                PelaporanKasHarian, "REPORT_DIRECTORY", Path(temp_dir) / "Reports"
+            with (
+                patch.object(
+                    PelaporanKasHarian,
+                    "REPORT_DIRECTORY",
+                    report_directory,
+                ),
+                patch.object(
+                    PelaporanKasHarian.subprocess,
+                    "run",
+                    side_effect=run_behave,
+                ) as run,
             ):
-                feature = "custom.feature"
-                result = PelaporanKasHarian.main(
-                    [feature, "--tags=@persetujuan_kas_harian"]
-                )
+                result = PelaporanKasHarian.main([])
 
-            self.assertEqual(result, 0)
-            command = run.call_args.args[0]
-            self.assertIn(feature, command)
-            self.assertIn("--tags=@persetujuan_kas_harian", command)
-            self.assertNotIn("--tags=@pelaporan_kas_harian", command)
+            self.assertEqual(result, 1)
+            run_arguments = run.call_args.args[0]
+            self.assertIn("--format=json", run_arguments)
+            self.assertIn("--format=pretty", run_arguments)
+            self.assertTrue(
+                any(argument.startswith("--outfile=") for argument in run_arguments)
+            )
+            reports = list(report_directory.glob("pelaporan-kas-harian-*.pdf"))
+            self.assertEqual(len(reports), 1)
+            self.assertTrue(reports[0].read_bytes().startswith(b"%PDF"))
+
+    def test_fails_explicitly_when_behave_does_not_write_json(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch.object(
+                    PelaporanKasHarian,
+                    "REPORT_DIRECTORY",
+                    Path(temp_dir) / "Reports",
+                ),
+                patch.object(
+                    PelaporanKasHarian.subprocess,
+                    "run",
+                    return_value=SimpleNamespace(returncode=1),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "tidak menghasilkan data JSON"):
+                    PelaporanKasHarian.main([])
 
 
 if __name__ == "__main__":

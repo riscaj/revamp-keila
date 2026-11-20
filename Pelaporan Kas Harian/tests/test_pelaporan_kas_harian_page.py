@@ -3,7 +3,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import (
+    NoSuchWindowException,
+    StaleElementReferenceException,
+    TimeoutException,
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
@@ -22,6 +26,7 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
         self.page._find_row_action = Mock()
         self.page._find_exact_visible_text = Mock(side_effect=lambda text: text)
         self.page._click_centered = Mock()
+        self.page._click_and_follow_window_change = Mock()
         self.page._fill_first_row_sheet_count = Mock()
         self.page._scroll_to_page_bottom = Mock()
 
@@ -35,10 +40,13 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
 
         self.assertEqual(result, "process")
         self.page._find_row_action.assert_called_once_with(row, "proses")
+        self.page._click_and_follow_window_change.assert_called_once_with(
+            process_button,
+            "Proses",
+        )
         self.assertEqual(
             self.page._click_centered.call_args_list,
             [
-                call(process_button),
                 call("Hitung"),
                 call("Selanjutnya"),
             ],
@@ -61,7 +69,56 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
         self.assertEqual(result, "process")
         self.assertEqual(self.page._visible_report_rows.call_count, 2)
         self.page._find_row_action.assert_called_once_with(row, "proses")
+        self.page._click_and_follow_window_change.assert_called_once_with(
+            process_button,
+            "Proses",
+        )
         self.page._complete_cash_denominations.assert_called_once_with()
+
+    def test_repair_row_calculates_cash_after_decision_without_filling_count(self):
+        repair_row = SimpleNamespace(text="Status: Perlu Perbaikan")
+        process_button = object()
+        self.page._visible_report_rows.return_value = [repair_row]
+        self.page._find_row_action.return_value = process_button
+
+        result = self.page.process_pending_or_add_report()
+
+        self.assertEqual(result, "process_repair")
+        self.page._find_row_action.assert_called_once_with(
+            repair_row,
+            "proses",
+        )
+        self.page._click_and_follow_window_change.assert_called_once_with(
+            process_button,
+            "Proses",
+        )
+        self.page._fill_first_row_sheet_count.assert_not_called()
+        self.page._scroll_to_page_bottom.assert_called_once_with()
+        self.assertEqual(
+            self.page._click_centered.call_args_list,
+            [
+                call("Selanjutnya"),
+                call("Hitung"),
+                call("Selanjutnya"),
+            ],
+        )
+
+    def test_prioritizes_unreported_row_over_repair_row(self):
+        unreported_row = SimpleNamespace(text="Belum Dilaporkan")
+        repair_row = SimpleNamespace(text="Perlu Perbaikan")
+        process_button = object()
+        self.page._visible_report_rows.return_value = [
+            repair_row,
+            unreported_row,
+        ]
+        self.page._find_row_action.return_value = process_button
+
+        self.page.process_pending_or_add_report()
+
+        self.page._find_row_action.assert_called_once_with(
+            unreported_row,
+            "proses",
+        )
 
     def test_waits_until_visible_report_rows_have_status(self):
         status_cell = SimpleNamespace(text="")
@@ -89,12 +146,15 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
         result = self.page.process_pending_or_add_report()
 
         self.assertEqual(result, "add_report")
+        self.page._click_and_follow_window_change.assert_called_once_with(
+            "Tambah Laporan",
+            "Tambah Laporan",
+        )
         self.page._fill_first_row_sheet_count.assert_called_once_with()
         self.page._scroll_to_page_bottom.assert_called_once_with()
         self.assertEqual(
             self.page._click_centered.call_args_list,
             [
-                call("Tambah Laporan"),
                 call("Hitung"),
                 call("Selanjutnya"),
             ],
@@ -108,12 +168,78 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             AssertionError,
-            "belum berstatus Disetujui",
+            "Perlu Perbaikan",
         ):
             self.page.process_pending_or_add_report()
 
         self.page._click_centered.assert_not_called()
+        self.page._click_and_follow_window_change.assert_not_called()
         self.page._fill_first_row_sheet_count.assert_not_called()
+
+    def test_switches_to_new_window_after_process_click(self):
+        page = object.__new__(PelaporanKasHarianPage)
+        page.driver = Mock()
+        page.driver.window_handles = ["old-window"]
+        page.driver.current_window_handle = "old-window"
+        page._click_centered = Mock()
+        page._click_centered.side_effect = lambda _element: setattr(
+            page.driver,
+            "window_handles",
+            ["old-window", "new-window"],
+        )
+
+        with patch(
+            "src.pages.transactions.pelaporan_kas_harian."
+            "pelaporan_kas_harian_page.WebDriverWait"
+        ) as wait_class:
+            wait_class.return_value.until.side_effect = (
+                lambda condition, *_args, **_kwargs: condition(page.driver)
+            )
+            page._click_and_follow_window_change(object(), "Proses")
+
+        page.driver.switch_to.window.assert_called_once_with("new-window")
+
+    def test_reports_when_no_window_remains_after_click(self):
+        page = object.__new__(PelaporanKasHarianPage)
+        page.driver = Mock()
+        page.driver.window_handles = ["current-window"]
+        page._click_centered = Mock()
+
+        with patch(
+            "src.pages.transactions.pelaporan_kas_harian."
+            "pelaporan_kas_harian_page.WebDriverWait"
+        ) as wait_class:
+            wait_class.return_value.until.side_effect = TimeoutException()
+            with self.assertRaisesRegex(
+                NoSuchWindowException,
+                "tidak ada jendela yang bisa dilanjutkan",
+            ):
+                page._click_and_follow_window_change(object(), "Proses")
+
+        page._click_centered.assert_called_once()
+
+    def test_retries_sheet_count_entry_after_switching_to_open_window(self):
+        page = object.__new__(PelaporanKasHarianPage)
+        page.ACTION_PAUSE_SECONDS = 0
+        page.driver = Mock()
+        page.wait = Mock()
+        initial_input = Mock()
+        initial_input.send_keys.side_effect = NoSuchWindowException()
+        recovered_input = Mock()
+        recovered_input.get_attribute.return_value = "0"
+        page.wait.until.side_effect = [initial_input, recovered_input, True]
+        page._switch_to_open_window = Mock()
+
+        with patch(
+            "src.pages.transactions.pelaporan_kas_harian."
+            "pelaporan_kas_harian_page.sleep"
+        ):
+            page._fill_first_row_sheet_count()
+
+        page._switch_to_open_window.assert_called_once_with()
+        initial_input.clear.assert_called_once_with()
+        recovered_input.clear.assert_called_once_with()
+        recovered_input.send_keys.assert_called_once_with("0")
 
     def test_completes_bank_report_after_adding_report(self):
         page = Mock()
@@ -134,6 +260,17 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
 
         page.complete_bank_balance_report.assert_called_once_with()
         self.assertEqual(context.report_action, "process")
+
+    def test_completes_bank_report_after_processing_repair_report(self):
+        page = Mock()
+        page.process_pending_or_add_report.return_value = "process_repair"
+        context = SimpleNamespace(pelaporan_kas_harian_page=page)
+
+        handle_daily_cash_and_bank_report(context)
+
+        page.complete_repair_bank_balance_report.assert_called_once_with()
+        page.complete_bank_balance_report.assert_not_called()
+        self.assertEqual(context.report_action, "process_repair")
 
     def test_resolves_the_cms_bank_pdf_from_upload_folder(self):
         page = object.__new__(PelaporanKasHarianPage)
@@ -170,14 +307,15 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
         saldo_input = Mock()
         confirmation_button = Mock()
         understood_button = Mock()
-        saldo_input.get_property.return_value = "0"
+        saldo_input.get_property.return_value = page.SALDO_CMS_NOMINAL
         page.wait.until.side_effect = [
             upload_input,
             True,
             saldo_input,
             True,
             confirmation_button,
-            understood_button,
+            ("element", understood_button),
+            True,
         ]
         page._cms_bank_pdf_path = Mock(return_value=upload_path)
         page._cms_bank_file_is_selected = Mock(return_value=True)
@@ -207,7 +345,7 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
         saldo_input.clear.assert_called_once_with()
         self.assertEqual(
             saldo_input.send_keys.call_args_list,
-            [call("0"), call(Keys.TAB)],
+            [call(page.SALDO_CMS_NOMINAL), call(Keys.TAB)],
         )
         page._scroll_to_page_bottom.assert_called_once_with()
         self.assertEqual(
@@ -232,25 +370,66 @@ class PelaporanKasHarianPageTests(unittest.TestCase):
             By.XPATH,
             '//button[normalize-space(.)="Ya, Lanjutkan"]',
         )
-        understood_wait = page.wait.until.call_args_list[5]
-        understood_wait_driver = Mock()
-        understood_wait_driver.find_element.return_value = understood_button
-        understood_button.is_displayed.return_value = True
-        understood_button.is_enabled.return_value = True
-        self.assertIs(
-            understood_wait.args[0](understood_wait_driver),
-            understood_button,
+        self.assertIn(
+            "Tombol atau alert 'Mengerti' tidak ditemukan",
+            page.wait.until.call_args_list[5].args[1],
         )
-        understood_wait_driver.find_element.assert_called_once_with(
-            By.XPATH,
-            '//button[normalize-space(.)="Mengerti"]',
-        )
+        self.assertEqual(page.wait.until.call_count, 7)
         self.assertEqual(sleep_mock.call_args_list[-1], call(5))
         self.assertEqual(
             events[-2:],
             [("click", understood_button), ("sleep", 5)],
         )
         sleep_mock.assert_called_with(5)
+
+    def test_repair_bank_report_submits_without_upload_or_balance_entry(self):
+        page = object.__new__(PelaporanKasHarianPage)
+        page.wait = Mock()
+        confirmation_button = Mock()
+        understood_button = Mock()
+        page.wait.until.side_effect = [
+            confirmation_button,
+            ("element", understood_button),
+            True,
+        ]
+        page._find_exact_visible_text = Mock(side_effect=lambda text: text)
+        page._click_centered = Mock()
+        page._scroll_to_page_bottom = Mock()
+
+        with patch(
+            "src.pages.transactions.pelaporan_kas_harian."
+            "pelaporan_kas_harian_page.sleep"
+        ) as sleep_mock:
+            page.complete_repair_bank_balance_report()
+
+        self.assertEqual(
+            page._click_centered.call_args_list,
+            [
+                call("Kirim Laporan"),
+                call(confirmation_button),
+                call(understood_button),
+            ],
+        )
+        page._scroll_to_page_bottom.assert_not_called()
+        self.assertEqual(page.wait.until.call_count, 3)
+        self.assertEqual(sleep_mock.call_args_list[-1], call(5))
+
+    def test_accepts_native_understood_alert_then_waits_five_seconds(self):
+        page = object.__new__(PelaporanKasHarianPage)
+        page.wait = Mock()
+        alert = Mock()
+        page.wait.until.side_effect = [("alert", alert), True]
+        page._click_centered = Mock()
+
+        with patch(
+            "src.pages.transactions.pelaporan_kas_harian."
+            "pelaporan_kas_harian_page.sleep"
+        ) as sleep_mock:
+            page._acknowledge_understood_popup("setelah laporan dikirim")
+
+        alert.accept.assert_called_once_with()
+        page._click_centered.assert_not_called()
+        self.assertEqual(sleep_mock.call_args_list, [call(5)])
 
 
 if __name__ == "__main__":
